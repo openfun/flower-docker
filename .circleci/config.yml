@@ -1,0 +1,75 @@
+version: 2
+jobs:
+  build-flower:
+    working_directory: ~/flower
+    machine:
+      docker_layer_caching: true
+    steps:
+      - checkout
+      - run:
+          name: Build flower image
+          command: docker build -t fundocker/flower:${CIRCLE_SHA1} .
+
+      - run:
+          name: List available images
+          command: docker images fundocker/flower
+
+  hub:
+    working_directory: ~/flower
+    machine: true
+    steps:
+      - checkout
+
+      # Login to DockerHub to Publish new images
+      #
+      # Nota bene: you'll need to define the following secrets environment vars
+      # in CircleCI interface:
+      #
+      #   - DOCKER_USER
+      #   - DOCKER_PASS
+      - run:
+          name: Login to DockerHub
+          command: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+      - run:
+          name: Build flower image
+          command: |
+            DOCKER_TAG=$(echo ${CIRCLE_TAG} | sed 's/^v//')
+            docker build -t fundocker/flower:${DOCKER_TAG} .
+
+      - run:
+          name: List available images
+          command: |
+            docker images fundocker/flower
+
+      - run:
+          name: Tag images
+          command: |
+            DOCKER_TAG=$(echo ${CIRCLE_TAG} | sed 's/^v//')
+            docker tag fundocker/flower:${DOCKER_TAG} fundocker/flower:latest
+            docker images fundocker/flower
+
+      - run:
+          name: Publish images
+          command: |
+            DOCKER_TAG=$(echo ${CIRCLE_TAG} | sed 's/^v//')
+            docker push fundocker/flower:latest
+            docker push fundocker/flower:${DOCKER_TAG}
+
+workflows:
+  version: 2
+  flower:
+    jobs:
+      - build-flower:
+          filters:
+            tags:
+              only: /.*/
+
+      - hub:
+          requires:
+            - build-flower
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
